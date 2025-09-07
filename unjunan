@@ -1,0 +1,168 @@
+local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
+
+-- Buat Window
+local Window = Rayfield:CreateWindow({
+   Name = "Siringplaza-Hangout",
+   Icon = 0,
+   LoadingTitle = "SiringPlaza",
+   LoadingSubtitle = "by JDDxD",
+   ShowText = "JDDxD",
+   Theme = "Default",
+   ToggleUIKeybind = "K",
+})
+
+-- Buat Tab
+local PlayerTab = Window:CreateTab("Player", 4483362458)
+
+-- Variabel global
+local FishingEnabled = false
+local AutoSellEnabled = false
+local HideRodEnabled = false
+local HoldAnimation = nil
+local AutoSellInterval = 30 -- default 30 detik
+
+-- Animasi kosong (untuk override tangan pegang tool)
+local emptyAnim = Instance.new("Animation")
+emptyAnim.AnimationId = "rbxassetid://0"
+
+-- Simpan properti asli dari rod
+local OriginalRodProperties = {}
+
+-- Fungsi untuk sembunyikan / munculkan rod + animasi tangan
+local function HideRod(rod, hide)
+   local player = game:GetService("Players").LocalPlayer
+   local char = player.Character or player.CharacterAdded:Wait()
+   if not rod or not char then return end
+   local humanoid = char:FindFirstChildOfClass("Humanoid")
+
+   if hide then
+      -- Sembunyikan rod
+      for _, part in pairs(rod:GetDescendants()) do
+         if not OriginalRodProperties[part] then
+            OriginalRodProperties[part] = {}
+         end
+
+         if part:IsA("BasePart") or part:IsA("Decal") then
+            OriginalRodProperties[part].Transparency = part.Transparency
+            part.Transparency = 1
+         elseif part:IsA("ParticleEmitter") or part:IsA("Beam") or part:IsA("Trail") then
+            OriginalRodProperties[part].Enabled = part.Enabled
+            part.Enabled = false
+         elseif part:IsA("RopeConstraint") then
+            OriginalRodProperties[part].Visible = part.Visible
+            part.Visible = false
+         end
+      end
+
+      -- Override animasi tangan angkat
+      if humanoid then
+         HoldAnimation = humanoid:LoadAnimation(emptyAnim)
+         HoldAnimation.Priority = Enum.AnimationPriority.Action
+         HoldAnimation:Play()
+      end
+   else
+      -- Balikin kondisi rod ke semula
+      for part, props in pairs(OriginalRodProperties) do
+         if part and part.Parent then
+            for propName, value in pairs(props) do
+               part[propName] = value
+            end
+         end
+      end
+      OriginalRodProperties = {}
+
+      -- Stop override animasi tangan
+      if HoldAnimation then
+         HoldAnimation:Stop()
+         HoldAnimation = nil
+      end
+   end
+end
+
+-- Toggle: Auto Fishing
+local ToggleFishing = PlayerTab:CreateToggle({
+   Name = "Mancing Otomatis",
+   CurrentValue = false,
+   Flag = "ToggleFishing",
+   Callback = function(Value)
+      FishingEnabled = Value
+      local player = game:GetService("Players").LocalPlayer
+      local backpack = player:WaitForChild("Backpack")
+
+      if FishingEnabled then
+         local rod = backpack:FindFirstChild("NormalRod")
+         if rod then
+            player.Character:WaitForChild("Humanoid"):EquipTool(rod)
+            task.wait(0.2)
+
+            if HideRodEnabled then
+               HideRod(rod, true)
+            end
+         end
+
+         task.spawn(function()
+            while FishingEnabled do
+               local char = player.Character
+               if char and char:FindFirstChild("NormalRod") and char.NormalRod:FindFirstChild("MiniGame") then
+                  char.NormalRod.MiniGame:FireServer("Complete")
+               end
+               task.wait(0.1)
+            end
+         end)
+      else
+         local humanoid = player.Character and player.Character:FindFirstChild("Humanoid")
+         if humanoid then
+            humanoid:UnequipTools()
+         end
+      end
+   end,
+})
+
+-- Slider: Interval Auto Sell
+local AutoSellSlider = PlayerTab:CreateSlider({
+   Name = "Interval Jual (detik)",
+   Range = {10, 120},    -- minimal 10 detik, maksimal 120 detik
+   Increment = 10,       -- kelipatan 10 (10, 20, 30, dst)
+   Suffix = " detik",
+   CurrentValue = AutoSellInterval,
+   Flag = "AutoSellInterval",
+   Callback = function(Value)
+      AutoSellInterval = Value
+   end,
+})
+
+-- Toggle: Auto Sell
+local AutoSellToggle = PlayerTab:CreateToggle({
+   Name = "Jual Ikan Otomatis",
+   CurrentValue = false,
+   Flag = "AutoSellToggle",
+   Callback = function(Value)
+      AutoSellEnabled = Value
+
+      if AutoSellEnabled then
+         task.spawn(function()
+            while AutoSellEnabled do
+               local args = {"Option1"}
+               local event = game:GetService("ReplicatedStorage"):WaitForChild("SellChoiceEvent")
+               event:FireServer(unpack(args))
+               task.wait(AutoSellInterval)
+            end
+         end)
+      end
+   end,
+})
+
+-- Toggle: Hide Rod
+local HideRodToggle = PlayerTab:CreateToggle({
+   Name = "Sembunyikan Pancing",
+   CurrentValue = false,
+   Flag = "HideRodToggle",
+   Callback = function(Value)
+      HideRodEnabled = Value
+      local player = game:GetService("Players").LocalPlayer
+      local char = player.Character or player.CharacterAdded:Wait()
+      local rod = char:FindFirstChild("NormalRod") or player.Backpack:FindFirstChild("NormalRod")
+
+      HideRod(rod, HideRodEnabled)
+   end,
+})
